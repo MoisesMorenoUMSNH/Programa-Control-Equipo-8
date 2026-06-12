@@ -5,7 +5,7 @@ Este programa es una herramienta interactiva en Python para simular, analizar y 
 
 ---
 
-## 👥 Creadores (Equipo 8)
+## 👥 Integrantes (Equipo 8)
 * **Moisés Moreno Cortez**
 * **Kassandra Delgado Mendez**
 * **Luz Selena**

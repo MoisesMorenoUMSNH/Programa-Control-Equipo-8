@@ -1,14 +1,10 @@
+# Cálculos matemáticos de sistemas de control
+# Equipo 8 - Control Analogico I - CONTROL DE POSICION DE UN MOTOR DE CD CON TREN DE ENGRANES
+
 import numpy as np
 import scipy.signal as signal
 
-def formatear_numero(num):
-    # Aquí muestro resultados con 3 cifras significativas (Inciso 3c)
-    if np.iscomplex(num):
-        return f"{num.real:.3g} {num.imag:+.3g}j"
-    return f"{num.real:.3g}"
-
 def calcular_raices(coeficientes):
-    # CORRECCIÓN: Usamos len() para evitar errores de ambigüedad con arreglos de NumPy
     if len(coeficientes) == 0 or (len(coeficientes) == 1 and coeficientes[0] == 0):
         return np.array([])
     return np.roots(coeficientes)
@@ -18,7 +14,6 @@ def analizar_estabilidad(polos):
         return "Estable"
     
     max_real = np.max(np.real(polos))
-    
     if max_real > 0:
         return "Inestable"
     elif np.isclose(max_real, 0):
@@ -30,83 +25,40 @@ def analizar_dominancia_y_escalon(polos, coef_num, coef_den, amplitud_escalon=1.
     resultados = {
         "dominancia": "No determinable",
         "tiempo_estabilizacion": "Infinito (Inestable)",
-        "valor_final": 0.0
+        "valor_final": 0.0,
+        "error_estado_estable_pct": 0.0,
+        "ts_val": None
     }
     
-    # Aquí calculo el valor final ante una entrada escalón (escalada por la amplitud)
+    # Valor final ante entrada escalón
     if coef_den[-1] != 0:
-        resultados["valor_final"] = (coef_num[-1] / coef_den[-1]) * amplitud_escalon
+        val_final = (coef_num[-1] / coef_den[-1]) * amplitud_escalon
+        resultados["valor_final"] = val_final
+        if amplitud_escalon != 0:
+            resultados["error_estado_estable_pct"] = (abs(amplitud_escalon - val_final) / abs(amplitud_escalon)) * 100
     else:
         resultados["valor_final"] = float('inf')
+        resultados["error_estado_estable_pct"] = float('inf')
         
     if len(polos) == 0 or analizar_estabilidad(polos) != "Estable":
         return resultados
 
-    partes_reales = np.abs(np.real(polos))
     polos_ordenados = sorted(polos, key=lambda p: abs(np.real(p)))
     min_real = abs(np.real(polos_ordenados[0]))
     
-    # Nueva lógica de dominancia basada en el ratio > 5 (Inciso 3f modificado)
+    # Lógica de dominancia basada en el criterio de relación de polos (> 5)
     if len(polos) == 1:
         resultados["dominancia"] = "Sistema de Primer Orden"
     elif len(polos) >= 2:
-        # Evitar división por cero
-        if min_real == 0:
-            ratio = 0
-        else:
-            ratio = abs(np.real(polos_ordenados[1]) / np.real(polos_ordenados[0]))
-            
-        if ratio > 5:
-            resultados["dominancia"] = "Primer Orden Dominante"
-        else:
-            resultados["dominancia"] = f"Segundo Orden (o superior)"
+        ratio = abs(np.real(polos_ordenados[1]) / np.real(polos_ordenados[0])) if min_real != 0 else 0
+        resultados["dominancia"] = "Primer Orden Dominante" if ratio > 5 else "Segundo Orden (o superior)"
 
-    # Aquí muestro el tiempo de estabilización del sistema (Inciso 3g)
+    # Tiempo de estabilización aproximado (criterio del 2%)
     ts = 4.0 / min_real if min_real > 0 else float('inf')
     resultados["tiempo_estabilizacion"] = f"{ts:.3g} segundos"
+    resultados["ts_val"] = ts
     
     return resultados
-
-def obtener_superindice(numero):
-    """Convierte un número normal a su versión en superíndice Unicode."""
-    superindices = {'0': '⁰', '1': '¹', '2': '²', '3': '³', '4': '⁴', 
-                    '5': '⁵', '6': '⁶', '7': '⁷', '8': '⁸', '9': '⁹', '-': '⁻'}
-    return "".join(superindices.get(digito, digito) for digito in str(numero))
-
-def construir_polinomio(coeficientes):
-    """Convierte una lista de coeficientes en un texto de polinomio con formato visual."""
-    if len(coeficientes) == 0:
-        return "0"
-    
-    grado = len(coeficientes) - 1
-    terminos = []
-    
-    for i, c in enumerate(coeficientes):
-        if c == 0 and grado != 0: 
-            continue
-            
-        potencia = grado - i
-        c_str = f"{c:g}"
-        
-        # Ocultar el "1" si acompaña a una s
-        if c == 1 and potencia != 0:
-            c_str = ""
-        elif c == -1 and potencia != 0:
-            c_str = "-"
-            
-        if potencia == 0:
-            terminos.append(f"{c:g}")
-        elif potencia == 1:
-            terminos.append(f"{c_str}s")
-        else:
-            super_potencia = obtener_superindice(potencia)
-            terminos.append(f"{c_str}s{super_potencia}")
-            
-    if not terminos:
-        return "0"
-        
-    polinomio = " + ".join(terminos)
-    return polinomio.replace("+ -", "- ")
 
 def analizar_transitorio(coef_num, coef_den, amplitud_escalon=1.0):
     resultados = {
@@ -123,29 +75,86 @@ def analizar_transitorio(coef_num, coef_den, amplitud_escalon=1.0):
         if abs(vf) < 1e-9:
             return resultados
             
-        # Sobreimpulso (%)
         pico_max = np.max(y)
-        if pico_max > vf and vf > 0:
-            sobreimpulso = ((pico_max - vf) / vf) * 100
-        else:
-            sobreimpulso = 0.0
-            
+        sobreimpulso = (((pico_max - vf) / vf) * 100) if (pico_max > vf and vf > 0) else 0.0
         resultados["sobreimpulso"] = f"{sobreimpulso:.2f}%"
         
-        # Tiempo pico
         if sobreimpulso > 0:
-            idx_pico = np.argmax(y)
-            resultados["tiempo_pico"] = f"{t[idx_pico]:.3g} s"
+            resultados["tiempo_pico"] = f"{t[np.argmax(y)]:.3g} s"
             
-        # Tiempo de subida (10% a 90%)
+        # Tiempo de subida (10% a 90% del valor final)
         if vf > 0:
             idx_10 = np.where(y >= 0.1 * vf)[0]
             idx_90 = np.where(y >= 0.9 * vf)[0]
             if len(idx_10) > 0 and len(idx_90) > 0:
-                t_10 = t[idx_10[0]]
-                t_90 = t[idx_90[0]]
-                resultados["tiempo_subida"] = f"{t_90 - t_10:.3g} s"
+                resultados["tiempo_subida"] = f"{t[idx_90[0]] - t[idx_10[0]]:.3g} s"
     except Exception:
         pass
         
     return resultados
+
+def obtener_lazo_cerrado(num_g, den_g, tipo_control, kp, ki, H=1.0):
+    # Retorna: (num_referencia, num_perturbacion, den_cerrado)
+    if tipo_control.upper() == 'PI':
+        num_c = np.array([kp, ki])
+        den_c = np.array([1, 0])
+    else:  # P
+        num_c = np.array([kp])
+        den_c = np.array([1])
+        
+    # C(s)*G(s)
+    num_ol = np.polymul(num_c, num_g)
+    den_ol = np.polymul(den_c, den_g)
+    
+    # Denominador común de lazo cerrado (1 + H * C(s)*G(s))
+    den_cl = np.polyadd(den_ol, H * num_ol)
+    
+    # Numerador R(s) -> Y(s)
+    num_cl_ref = num_ol
+    
+    # Numerador D(s) -> Y(s) (perturbación en la entrada de la planta)
+    num_cl_dist = np.polymul(num_g, den_c)
+    
+    return list(num_cl_ref), list(num_cl_dist), list(den_cl)
+
+def simular_escalon(coef_num, coef_den, amplitud):
+    sys = signal.TransferFunction(coef_num, coef_den)
+    t, y = signal.step(sys, N=2000)
+    return t, y * amplitud
+
+def simular_rampa(coef_num, coef_den, amplitud, t_sim=None):
+    sys = signal.TransferFunction(coef_num, coef_den)
+    if t_sim is None:
+        polos = np.roots(coef_den)
+        max_real = np.max(np.real(polos)) if len(polos) > 0 else 0
+        
+        if max_real < -1e-5:
+            partes_reales = np.abs(np.real(polos))
+            min_real = np.min(partes_reales[partes_reales > 1e-9]) if any(partes_reales > 1e-9) else 1.0
+            t_sim = 4.0 / min_real * 2.5
+        else:
+            t_sim = 15.0
+            
+    t = np.linspace(0, t_sim, 2000)
+    t_out, y_out, _ = signal.lsim(sys, U=amplitud * t, T=t)
+    return t_out, y_out
+
+def simular_pulso(coef_num, coef_den, amplitud, ancho_pulso, retardo, t_sim=None):
+    sys = signal.TransferFunction(coef_num, coef_den)
+    if t_sim is None:
+        # Mostramos 2 periodos completos más el retardo
+        t_sim = retardo + 2.0 * (2.0 * ancho_pulso)
+        
+    t = np.linspace(0, t_sim, 2000)
+    u = np.zeros_like(t)
+    
+    # Construir el tren de pulsos (onda cuadrada) con retardo
+    periodo = 2.0 * ancho_pulso
+    for i, ti in enumerate(t):
+        if ti >= retardo:
+            t_rel = ti - retardo
+            if (t_rel % periodo) < ancho_pulso:
+                u[i] = amplitud
+                
+    t_out, y_out, _ = signal.lsim(sys, U=u, T=t)
+    return t_out, y_out, u
